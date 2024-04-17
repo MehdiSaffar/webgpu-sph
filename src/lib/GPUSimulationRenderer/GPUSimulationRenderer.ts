@@ -1,5 +1,4 @@
 import { GPUSimulation } from '$lib/GPUSimulation/GPUSimulation'
-import { getBuffer } from '$lib/webgpu-utils'
 import renderShaderCode from './render.wgsl?raw'
 
 export type GPUSimulationRendererSettings = {
@@ -8,6 +7,7 @@ export type GPUSimulationRendererSettings = {
   SELECTED_PROPERTY: 'velocity' | 'density' | 'pressure' | 'force'
   MIN_COLOR: [number, number, number]
   MAX_COLOR: [number, number, number]
+  BACKGROUND_COLOR: [number, number, number]
   RADIUS: number
 }
 
@@ -135,7 +135,7 @@ export class GPUSimulationRenderer {
       colorAttachments: [
         {
           view: this.ctx.getCurrentTexture().createView(),
-          clearValue: [0, 0, 0, 1],
+          clearValue: [...this.settings.BACKGROUND_COLOR, 1],
           loadOp: 'clear',
           storeOp: 'store'
         }

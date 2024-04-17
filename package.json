@@ -30,6 +30,7 @@
 		"d3": "^7.9.0",
 		"flowbite": "^2.3.0",
 		"flowbite-svelte": "^0.44.24",
+		"flowbite-svelte-icons": "^1.5.0",
 		"function-plot": "^1.24.4",
 		"mathjs": "^12.4.1",
 		"pixi.js": "^8.1.0",

@@ -5,6 +5,8 @@
   import { AccordionItem, Accordion, Radio } from 'flowbite-svelte'
   import { Label, Input, Select, Range, Button } from 'flowbite-svelte'
   import Plotly from '@aknakos/sveltekit-plotly'
+  import { LinkedinSolid, GithubSolid, PlaySolid, PauseSolid} from 'flowbite-svelte-icons'
+
   import { writable } from 'svelte/store'
   import { hexToRGB, range, roundTo } from '$lib/utils'
 
@@ -29,6 +31,7 @@
     VIEWPORT_SIZE: [1000, 1000] as [number, number],
     MIN_COLOR: '#c799c3',
     MAX_COLOR: '#d41111',
+    BACKGROUND_COLOR: '#ffffff'
   }
 
   const settings = writable({ ...defaultSettings })
@@ -83,6 +86,7 @@
         SELECTED_PROPERTY: $settings.SELECTED_PROPERTY,
         MIN_COLOR: hexToRGB($settings.MIN_COLOR),
         MAX_COLOR: hexToRGB($settings.MAX_COLOR),
+        BACKGROUND_COLOR: hexToRGB($settings.BACKGROUND_COLOR),
         RADIUS: $settings.RADIUS
       }
     })
@@ -91,8 +95,10 @@
   function loop() {
     requestAnimationFrame(loop)
 
-    gpuSimulation.simulate()
-    gpuSimulationRenderer.render()
+    if (running) {
+      gpuSimulation.simulate()
+      gpuSimulationRenderer.render()
+    }
   }
 
   onMount(async () => {
@@ -115,14 +121,16 @@
     gpuSimulation.setInteraction(0, 0, 'none')
   }
 
+  let running = true
 
-  $: ({N} = $settings)
+  $: ({ N } = $settings)
   $: N, init()
   $: gpuSimulation?.updateSettings($settings)
   $: gpuSimulationRenderer?.updateSettings({
     SELECTED_PROPERTY: $settings.SELECTED_PROPERTY,
     MIN_COLOR: hexToRGB($settings.MIN_COLOR),
     MAX_COLOR: hexToRGB($settings.MAX_COLOR),
+    BACKGROUND_COLOR: hexToRGB($settings.BACKGROUND_COLOR),
     RADIUS: $settings.RADIUS
   })
 
@@ -230,7 +238,7 @@
     {
       label: 'Radius',
       name: 'RADIUS',
-      range: [0.1, 10, 0.1],
+      range: [0.1, 2, 0.1],
       description: 'The radius of the particles.'
     }
   ]
@@ -244,15 +252,51 @@
     on:mousedown={onCanvasMouseMove}
     on:contextmenu={(e) => e.preventDefault()}
     bind:this={canvas}
-    style="border: 1px solid black;"
     width={$settings.VIEWPORT_SIZE[0]}
     height={$settings.VIEWPORT_SIZE[1]}
   />
-  <Accordion multiple class="flex-1 overflow-y-auto">
+  <Accordion multiple class="flex-1 overflow-y-auto px-8" flush>
+    <div class="flex flex-col gap-4 my-8">
+      <h3 class="text-2xl font-medium">Welcome to the fluid simulator!</h3>
+      <p>
+        This simulator is based on the <a
+          href="https://en.wikipedia.org/wiki/Smoothed-particle_hydrodynamics"
+          target="_blank">Smoothed Particle Hydrodynamics (SPH)</a
+        >
+        technique. It runs on the
+        <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API" target="_blank">WebGPU API</a>.
+      </p>
+      <p>
+        To get started, choose the number of desired particles under <span class="font-bold">Simulation Parameters</span
+        > and play around with the other settings to change the behavior of the fluid. You can also interact with the fluid
+        by clicking and dragging on the canvas. Right-click to push the fluid away and left-click to pull the fluid towards
+        the cursor.
+      </p>
+      <p>
+        For more information, check out the project's code on <a
+          href="https://github.com/MehdiSaffar/webgpu-sph"
+          target="_blank"><GithubSolid class="inline mb-1" /> GitHub</a
+        >
+        and connect with me on
+        <a href="https://www.linkedin.com/in/MehdiSaffar" target="_blank"
+          ><LinkedinSolid class="inline mb-1" /> LinkedIn</a
+        >.
+      </p>
+      <p>Have fun!</p>
+      <Button on:click={() => running = !running}>
+        
+        {#if running}
+        Pause simulation <PauseSolid/>
+        {:else}
+        Play simulation <PlaySolid/>
+        {/if}
+      
+      </Button>
+    </div>
     <AccordionItem open>
-      <span slot="header">Visualization</span>
+      <span slot="header">Visualization parameters</span>
       <div class="flex mb-2">
-        <Label for="hs-color-input" class="block me-2">Color based on:</Label>
+        <Label for="hs-color-input" class="flex-shrink-0 self-center me-2">Color based on:</Label>
         <Select
           items={[
             { value: 'density', name: 'Density' },
@@ -264,23 +308,33 @@
       </div>
       <div class="flex gap-2">
         <div class="flex items-center">
-          <Label for="hs-color-input" class="block me-2">Min color:</Label>
+          <Label for="background-color" class="block me-2">Background color:</Label>
           <Input
             type="color"
             class="p-1 h-10 w-14 block bg-white border border-gray-200 cursor-pointer rounded-lg disabled:opacity-50 disabled:pointer-events-none"
-            id="hs-color-input"
-            bind:value={$settings.MIN_COLOR}
-            title="Choose your color"
+            id="background-color"
+            bind:value={$settings.BACKGROUND_COLOR}
+            title="Choose the background color"
           />
         </div>
         <div class="flex items-center">
-          <Label for="hs-color-input" class="block me-2">Max color:</Label>
+          <Label for="min-color" class="block me-2">Minimum color:</Label>
           <Input
             type="color"
             class="p-1 h-10 w-14 block bg-white border border-gray-200 cursor-pointer rounded-lg disabled:opacity-50 disabled:pointer-events-none"
-            id="hs-color-input"
+            id="min-color"
+            bind:value={$settings.MIN_COLOR}
+            title="Choose the minimum color"
+          />
+        </div>
+        <div class="flex items-center">
+          <Label for="max-color" class="block me-2">Maximum color:</Label>
+          <Input
+            type="color"
+            class="p-1 h-10 w-14 block bg-white border border-gray-200 cursor-pointer rounded-lg disabled:opacity-50 disabled:pointer-events-none"
+            id="max-color"
             bind:value={$settings.MAX_COLOR}
-            title="Choose your color"
+            title="Choose the maximum color"
           />
         </div>
       </div>
@@ -328,36 +382,45 @@
         </div>
       </div>
       <section class="m-2 p-2">
-        <div class="bg-red gap-8">
-          <div class="grid grid-cols-2 gap-x-2">
-            {#each elements as { name, label, range, values, description }}
-              <Label for={name} class="self-center font-semibold">{label}: {roundTo($settings[name], 4)}</Label>
-              {#if range}
-                <Range
-                  class="self-center"
-                  {name}
-                  min={range[0]}
-                  max={range[1]}
-                  step={range[2]}
-                  bind:value={$settings[name]}
-                />
-              {:else if values}
-                <Select
-                  class="self-center"
-                  {name}
-                  items={values.map((value) => ({ value, name: value.toString() }))}
-                  bind:value={$settings[name]}
-                />
-              {/if}
-              <Button
-                disabled={$settings[name] === defaultSettings[name]}
-                on:click={() => ($settings[name] = defaultSettings[name])}>Reset</Button
-              >
-              <p class="col-span-3 mb-4">{description}</p>
-            {/each}
-          </div>
+        <div class="parameters gap-x-2">
+          {#each elements as { name, label, range, values, description }}
+            <Label for={name} class="self-center font-semibold">{label}: {roundTo($settings[name], 4)}</Label>
+            {#if range}
+              <Range
+                class="self-center"
+                {name}
+                min={range[0]}
+                max={range[1]}
+                step={range[2]}
+                bind:value={$settings[name]}
+              />
+            {:else if values}
+              <Select
+                class="self-center"
+                {name}
+                items={values.map((value) => ({ value, name: value.toString() }))}
+                bind:value={$settings[name]}
+              />
+            {/if}
+            <Button
+              class="ml-8"
+              disabled={$settings[name] === defaultSettings[name]}
+              on:click={() => ($settings[name] = defaultSettings[name])}>Reset</Button
+            >
+            <p class="col-span-3 mb-12  ">{description}</p>
+          {/each}
         </div>
       </section>
     </AccordionItem>
   </Accordion>
 </main>
+
+<style>
+  a {
+    @apply font-medium text-blue-600 hover:underline;
+  }
+  .parameters {
+    @apply grid;
+    grid-template-columns: auto 1fr auto;
+  }
+</style>
