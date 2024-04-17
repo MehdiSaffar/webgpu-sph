@@ -103,12 +103,14 @@ export class GPUMinMax {
 
     let encoder = this.device.createCommandEncoder({ label: 'Copy Min Encoder - Copy input' })
     encoder.copyBufferToBuffer(inputBuffer, 0, this.bufCopy, 0, inputBuffer.size)
+
     let pass = encoder.beginComputePass({ label: 'Init' })
     pass.setPipeline(initPipeline)
     pass.setBindGroup(0, this.bindGroup)
     pass.dispatchWorkgroups(Math.ceil(bufferUnitLength / this.WK_SIZE))
     pass.end()
     this.device.queue.submit([encoder.finish()])
+
     for (let size = 2; size <= bufferUnitLength; size *= 2) {
       this.UBOViews.size.set([size])
       this.device.queue.writeBuffer(this.bufUBO, 0, this.UBOValues)

@@ -1,5 +1,5 @@
 const DENSITY = 0;
-const PRESSURE = 1;
+const NEAR_DENSITY = 1;
 const FORCE = 2;
 const VELOCITY = 3;
 
@@ -15,9 +15,9 @@ struct RenderUBO {
 };
 
 @group(0) @binding(0) var<uniform> ubo : RenderUBO;
-@group(0) @binding(1) var<storage> ranges : array<f32>;
+@group(0) @binding(1) var<storage, read> ranges : array<f32>;
 @group(0) @binding(2) var<storage, read> densities: array<f32>;
-@group(0) @binding(3) var<storage, read> pressures: array<f32>;
+@group(0) @binding(3) var<storage, read> near_densities: array<f32>;
 @group(0) @binding(4) var<storage, read> forces_mag: array<f32>;
 @group(0) @binding(5) var<storage, read> velocities_mag: array<f32>;
 
@@ -65,8 +65,8 @@ fn vs(iv: InVertex, @builtin(vertex_index) vi: u32, @builtin(instance_index) ii:
 
     if ubo.SELECTED_PROPERTY == DENSITY {
         value = densities[ii];
-    } else if ubo.SELECTED_PROPERTY == PRESSURE {
-        value = pressures[ii];
+    } else if ubo.SELECTED_PROPERTY == NEAR_DENSITY {
+        value = near_densities[ii];
     } else if ubo.SELECTED_PROPERTY == FORCE {
         value = forces_mag[ii];
     } else if ubo.SELECTED_PROPERTY == VELOCITY {

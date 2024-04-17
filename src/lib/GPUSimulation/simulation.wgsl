@@ -158,7 +158,7 @@ fn compute_densities_smart(i: u32) -> vec2f {
         let next_cell_pos = cell_pos + cell_offsets[offset_idx];
         let next_cell_key = get_cell_key(get_cell_hash(next_cell_pos));
 
-        if start_indices[next_cell_key] == ubo.N {
+        if start_indices[next_cell_key] >= ubo.N {
             continue;
         }
 
@@ -233,7 +233,7 @@ fn compute_forces_smart(i: u32) -> vec2f {
     for (var offset_idx = 0u; offset_idx < 9u; offset_idx++) {
         let next_cell_key = get_cell_key(get_cell_hash(cell_pos + cell_offsets[offset_idx]));
 
-        if start_indices[next_cell_key] == ubo.N {
+        if start_indices[next_cell_key] >= ubo.N {
             continue;
         }
 
@@ -294,8 +294,8 @@ fn compute_densities(@builtin(global_invocation_id) gid: vec3u) {
         return;
     }
 
-    // let ds = compute_densities_smart(i);
-    let ds = compute_densities_dumb(i);
+    let ds = compute_densities_smart(i);
+    // let ds = compute_densities_dumb(i);
 
     densities[i] = ds.x;
     near_densities[i] = ds.y;
@@ -309,8 +309,8 @@ fn compute_forces(@builtin(global_invocation_id) gid: vec3u) {
         return;
     }
 
-    // var forces = compute_forces_smart(i);
-    var forces = compute_forces_dumb(i);
+    var forces = compute_forces_smart(i);
+    // var forces = compute_forces_dumb(i);
     forces += compute_interaction_force(i);
     forces_mag[i] = length(forces);
 

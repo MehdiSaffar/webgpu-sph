@@ -15,6 +15,5 @@ export function roundTo(num = 0, decimals = 2) {
 }
 
 export async function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

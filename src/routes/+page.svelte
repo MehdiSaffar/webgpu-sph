@@ -36,7 +36,7 @@
     MAX_COLOR: '#FF3300',
     BACKGROUND_COLOR: '#ffffff',
     INTERACTION_ADD_FLUID_ADD_COUNT: 10
-  }
+  } 
 
   const settings = writable({ ...defaultSettings })
 
@@ -99,14 +99,14 @@
     running = true
   }
 
-  window.printall = async () => {
-    const ranges = await getBuffer(gpuSimulation.bufRanges, gpuSimulation.device, Float32Array)
-    // const pos = (await getBuffer(gpuSimulation.bufPositions, gpuSimulation.device, Float32Array)).slice(0, $settings.N)
-    // const den = (await getBuffer(gpuSimulation.bufDensities, gpuSimulation.device, Float32Array)).slice(0, $settings.N * 2)
-    // console.log('density', den)
-    // console.log('positions', pos)
-    console.log(ranges)
-  }
+  // window.printall = async () => {
+  //   const ranges = await getBuffer(gpuSimulation.bufRanges, gpuSimulation.device, Float32Array)
+  //   // const pos = (await getBuffer(gpuSimulation.bufPositions, gpuSimulation.device, Float32Array)).slice(0, $settings.N)
+  //   // const den = (await getBuffer(gpuSimulation.bufDensities, gpuSimulation.device, Float32Array)).slice(0, $settings.N * 2)
+  //   // console.log('density', den)
+  //   // console.log('positions', pos)
+  //   console.log(ranges)
+  // }
 
   async function loop() {
     // await gpuSimulation.device.queue.onSubmittedWorkDone()
@@ -533,7 +533,7 @@
 
 <svelte:window on:keydown={onKeyDown} />
 
-<style>
+<style lang="postcss">
   a {
     @apply font-medium text-blue-600 hover:underline;
   }

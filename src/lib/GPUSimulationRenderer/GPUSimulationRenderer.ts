@@ -4,7 +4,7 @@ import renderShaderCode from './render.wgsl?raw'
 export type GPUSimulationRendererSettings = {
   SCENE_SIZE: [number, number]
   VIEWPORT_SIZE: [number, number]
-  SELECTED_PROPERTY: 'velocity' | 'density' | 'pressure' | 'force'
+  SELECTED_PROPERTY: 'velocity' | 'density' | 'near_density' | 'force'
   MIN_COLOR: [number, number, number]
   MAX_COLOR: [number, number, number]
   BACKGROUND_COLOR: [number, number, number]
@@ -155,7 +155,7 @@ export class GPUSimulationRenderer {
   serializeSelectedProperty(property: GPUSimulationRendererSettings['SELECTED_PROPERTY']) {
     const _map = {
       density: 0,
-      pressure: 1,
+      near_density: 1,
       force: 2,
       velocity: 3
     }
@@ -180,7 +180,7 @@ export class GPUSimulationRenderer {
     this.device.queue.writeBuffer(this.bufRenderUBO, 0, this.RenderUBOValues)
   }
 
-  render(interactionType: 'add-fluid' | 'force') {
+  render() {
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: 'renderPassDescriptor',
       colorAttachments: [

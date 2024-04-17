@@ -1,4 +1,6 @@
-export async function getBuffer(buffer: GPUBuffer, device: GPUDevice, Type) {
+import type { TypedArrayConstructor } from "webgpu-utils"
+
+export async function getBuffer(buffer: GPUBuffer, device: GPUDevice, Type: TypedArrayConstructor) {
   const bufferCopy = device.createBuffer({
     label: 'Copy Buffer',
     size: buffer.size,
