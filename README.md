@@ -1,28 +1,23 @@
-# create-svelte
+# Fluid simulator app with WebGPU API
 
-Everything you need to build a Svelte project, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/main/packages/create-svelte).
+[![](./demo.mp4)](https://webgpu-sph.vercel.app)
 
-## Creating a project
+This project is a fluid simulator application written in WebGPU, utilizing the [Smoothed Particle Hydrodynamics (SPH)](https://en.wikipedia.org/wiki/Smoothed-particle_hydrodynamics) technique for simulation. 
 
-If you're seeing this, you've probably already done this step. Congrats!
+You can play around with the app at [webgpu-sph.vercel.app](https://webgpu-sph.vercel.app).
 
-```bash
-# create a new project in the current directory
-npm create svelte@latest
+The frontend is developed using [SvelteKit](https://kit.svelte.dev/), [Flowbite](https://flowbite-svelte.com/), and [TailwindCSS](https://tailwindcss.com/). It is bundled with Vite. The simulation and rendering are entirely done in WebGPU, providing a fast and efficient fluid simulation experience.
 
-# create a new project in my-app
-npm create svelte@latest my-app
-```
+This project was inspired by [Sebastian League's Coding Adventure video about Fluid Simulation](https://www.youtube.com/watch?v=rSKMYc1CQHE).
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
 ```bash
+# 1) Install dependencies
+npm install
+# 2) Start a development server
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+# 3) Open browser at the URL shown in the terminal
 ```
 
 ## Building
@@ -33,6 +28,10 @@ To create a production version of your app:
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+You can preview the production build with `npm run preview` .
 
-> To deploy your app, you may need to install an [adapter](https://kit.svelte.dev/docs/adapters) for your target environment.
+## Contact
+
+For inquiries or collaborations, feel free to reach out to me on [LinkedIn](https://github.com/MehdiSaffar).
+
+Developed by Mehdi Saffar.

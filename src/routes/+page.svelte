@@ -532,6 +532,9 @@
 </main>
 
 <svelte:window on:keydown={onKeyDown} />
+<svelte:head>
+  <title>WebGPU Fluid Simulator - Mehdi Saffar</title>
+</svelte:head>
 
 <style lang="postcss">
   a {
