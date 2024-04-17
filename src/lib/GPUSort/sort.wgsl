@@ -1,10 +1,10 @@
 const WK_SIZE: u32 = $[WK_SIZE];
 
 @group(0) @binding(0) var<uniform> tonic: vec2u;
-@group(0) @binding(1) var<storage, read_write> input: array<vec2i>;
-var<workgroup> shared_data: array<vec2i, WK_SIZE>;
+@group(0) @binding(1) var<storage, read_write> input: array<vec2u>;
+var<workgroup> shared_data: array<vec2u, WK_SIZE>;
 
-fn lt(a: vec2i, b: vec2i) -> bool {
+fn lt(a: vec2u, b: vec2u) -> bool {
     return a.x < b.x || (a.x == b.x && a.y < b.y);
 }
 

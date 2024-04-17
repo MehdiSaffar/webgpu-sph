@@ -1,4 +1,4 @@
-export async function getBuffer(buffer: GPUBuffer, device: GPUDevice) {
+export async function getBuffer(buffer: GPUBuffer, device: GPUDevice, Type) {
   const bufferCopy = device.createBuffer({
     label: 'Copy Buffer',
     size: buffer.size,
@@ -13,5 +13,5 @@ export async function getBuffer(buffer: GPUBuffer, device: GPUDevice) {
   const buf = bufferCopy.getMappedRange().slice(0)
   bufferCopy.unmap()
   bufferCopy.destroy()
-  return buf
+  return new Type(buf)
 }

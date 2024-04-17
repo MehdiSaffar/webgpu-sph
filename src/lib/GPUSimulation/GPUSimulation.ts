@@ -1,6 +1,7 @@
-import { GPUMin } from '$lib/GPUMin/GPUMin'
+import { GPUMinMax } from '$lib/GPUMin/GPUMinMax'
 import { GPUSort } from '../GPUSort/GPUSort'
 import shaderCode from './simulation.wgsl?raw'
+import { varEx } from 'varex'
 
 export const KERNELS = {
   spiky: (PARTICLE_MASS: number, SMOOTHING_RADIUS: number) => ({
@@ -14,6 +15,7 @@ export const KERNELS = {
 }
 
 export type GPUSimulationSettingsInput = {
+  MAX_N: number
   SMOOTHING_RADIUS: number
   BASE_DENSITY: number
   PARTICLE_MASS: number
@@ -28,11 +30,13 @@ export type GPUSimulationSettingsInput = {
   RADIUS: number
   DENSITY_KERNEL: 'soft' | 'spiky'
   INTERACTION_STRENGTH: number
+  INTERACTION_RADIUS: number
   SELECTED_PROPERTY: 'density' | 'near_density' | 'force' | 'velocity'
 }
 
 export type GPUSimulationSettings = {
   N: number
+  MAX_N: number
   SMOOTHING_RADIUS: number
   BASE_DENSITY: number
   PARTICLE_MASS: number
@@ -42,6 +46,7 @@ export type GPUSimulationSettings = {
   GRAVITY: number
   DENSITY_TO_PRESSURE_FACTOR: number
   NEAR_DENSITY_TO_NEAR_PRESSURE_FACTOR: number
+  INTERACTION_RADIUS: number
   VIEWPORT_SIZE: [number, number]
   TIME_STEP: number
   RADIUS: number
@@ -97,10 +102,11 @@ export class GPUSimulation {
     RADIUS: new Float32Array(this.UBOValues, 52, 1),
     INTERACTION_STRENGTH: new Float32Array(this.UBOValues, 56, 1),
     INTERACTION_POS: new Float32Array(this.UBOValues, 64, 2),
-    DENSITY_KERNEL: new Uint32Array(this.UBOValues, 72, 1)
+    INTERACTION_RADIUS: new Float32Array(this.UBOValues, 72, 1),
+    DENSITY_KERNEL: new Uint32Array(this.UBOValues, 76, 1)
   }
 
-  gpuMin: GPUMin
+  gpuMin: GPUMinMax
   bufForcesMag: GPUBuffer
   bufVelocitiesMag: GPUBuffer
   predictPositionsPipeline: GPUComputePipeline
@@ -122,9 +128,12 @@ export class GPUSimulation {
     this.tick = 0
     this.device = device
     this.settings = { ...settings, N: positions.length / 2, INTERACTION_POS: [0, 0], INTERACTION_AMOUNT: 0 }
-    this.WK_SIZE = 256
+    this.WK_SIZE = this.device.limits.maxComputeWorkgroupSizeX
 
-    const shaderModule = device.createShaderModule({ label: 'Shader Module', code: shaderCode })
+    const shaderModule = device.createShaderModule({
+      label: 'Shader Module',
+      code: varEx(shaderCode, { WK_SIZE: this.WK_SIZE })
+    })
 
     this.bufUBO = this.device.createBuffer({
       label: 'UBO',
@@ -134,31 +143,31 @@ export class GPUSimulation {
 
     this.bufPositions = this.device.createBuffer({
       label: 'Positions',
-      size: positions.byteLength,
+      size: this.settings.MAX_N * 2 * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     })
 
     this.bufPredictedPositions = this.device.createBuffer({
       label: 'Predicted Positions',
-      size: positions.byteLength,
+      size: this.settings.MAX_N * 2 * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     })
 
     this.bufVelocities = this.device.createBuffer({
       label: 'Velocities',
-      size: this.settings.N * 2 * Float32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * 2 * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     })
 
     this.bufNearDensities = this.device.createBuffer({
       label: 'Near Densities',
-      size: this.settings.N * Float32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     })
 
     this.bufDensities = this.device.createBuffer({
       label: 'Densities',
-      size: this.settings.N * Float32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     })
 
@@ -170,25 +179,25 @@ export class GPUSimulation {
 
     this.bufSpatialLookup = this.device.createBuffer({
       label: 'Spatial Lookup',
-      size: this.settings.N * 2 * Int32Array.BYTES_PER_ELEMENT,
-      usage: GPUBufferUsage.STORAGE
+      size: this.settings.MAX_N * 2 * Int32Array.BYTES_PER_ELEMENT,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
     })
 
     this.bufStartIndices = this.device.createBuffer({
       label: 'Start Indices',
-      size: this.settings.N * Uint32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * Uint32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE
     })
 
     this.bufForcesMag = this.device.createBuffer({
       label: 'Forces Magnitude',
-      size: this.settings.N * Float32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     })
 
     this.bufVelocitiesMag = this.device.createBuffer({
       label: 'Velocities Mag',
-      size: this.settings.N * Float32Array.BYTES_PER_ELEMENT,
+      size: this.settings.MAX_N * Float32Array.BYTES_PER_ELEMENT,
       usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     })
 
@@ -262,7 +271,7 @@ export class GPUSimulation {
     this.device.queue.writeBuffer(this.bufPositions, 0, positions)
     this.writeUniforms()
 
-    this.gpuMin = new GPUMin(device, positions.length)
+    this.gpuMin = new GPUMinMax(device, this.settings.MAX_N)
     this.gpuSort = new GPUSort(device, this.bufSpatialLookup)
   }
 
@@ -298,6 +307,7 @@ export class GPUSimulation {
     this.UBOViews.TIME_STEP.set([this.settings.TIME_STEP])
     this.UBOViews.RADIUS.set([this.settings.RADIUS])
     this.UBOViews.INTERACTION_POS.set(this.settings.INTERACTION_POS)
+    this.UBOViews.INTERACTION_RADIUS.set([this.settings.INTERACTION_RADIUS])
 
     this.UBOViews.INTERACTION_STRENGTH.set([this.settings.INTERACTION_AMOUNT])
 
@@ -307,42 +317,64 @@ export class GPUSimulation {
     this.settingsDirty = false
   }
 
-  public setInteraction(x: number, y: number, type: 'push' | 'pull' | 'none') {
+  public interactForce(x: number, y: number, type: 'push' | 'pull' | 'none') {
     this.updateSettings({
       INTERACTION_AMOUNT: type === 'none' ? 0 : (type === 'pull' ? -1 : 1) * this.settings.INTERACTION_STRENGTH,
       INTERACTION_POS: [x, y]
     })
   }
 
+  public interactAddFluid(x: number, y: number, addCount: number) {
+    addCount = Math.min(addCount, this.settings.MAX_N - this.settings.N)
+    const newCount = this.settings.N + addCount
+
+    if (!addCount) return
+    const newPositions = new Float32Array(
+      Array.from({ length: addCount })
+        .map((_) => {
+          const R = 10
+          const r = R * Math.sqrt(Math.random())
+          const theta = Math.random() * 2 * Math.PI
+          const rx = x + r * Math.cos(theta)
+          const ry = y + r * Math.sin(theta)
+          return [rx, ry]
+        })
+        .flat()
+    )
+    this.device.queue.writeBuffer(this.bufPositions, this.settings.N * 2 * Float32Array.BYTES_PER_ELEMENT, newPositions)
+    this.updateSettings({ N: newCount })
+  }
+
   public simulate() {
     if (this.settingsDirty) this.writeUniforms()
 
-    let encoder = this.device.createCommandEncoder()
+    const WK_COUNT = Math.ceil(this.settings.MAX_N / this.WK_SIZE)
+
+    let encoder = this.device.createCommandEncoder({ label: 'Simulation 1' })
     let pass = encoder.beginComputePass()
     pass.setPipeline(this.predictPositionsPipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.dispatchWorkgroups(this.settings.N / this.WK_SIZE)
+    pass.dispatchWorkgroups(WK_COUNT)
     pass.setPipeline(this.computeSpatialLookupPassOnePipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.dispatchWorkgroups(this.settings.N / this.WK_SIZE)
+    pass.dispatchWorkgroups(WK_COUNT)
     pass.end()
     this.device.queue.submit([encoder.finish()])
-
     this.gpuSort.sort()
 
-    encoder = this.device.createCommandEncoder()
+    encoder = this.device.createCommandEncoder({ label: 'Simulation 2' })
     pass = encoder.beginComputePass()
     pass.setPipeline(this.computeSpatialLookupPassTwoPipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.dispatchWorkgroups(this.settings.N / this.WK_SIZE)
+    pass.dispatchWorkgroups(WK_COUNT)
 
     pass.setPipeline(this.computeDensitiesPipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.dispatchWorkgroups(this.settings.N / this.WK_SIZE)
+    pass.dispatchWorkgroups(WK_COUNT)
 
     pass.setPipeline(this.computeForcesPipeline)
     pass.setBindGroup(0, this.bindGroup)
-    pass.dispatchWorkgroups(this.settings.N / this.WK_SIZE)
+    pass.dispatchWorkgroups(WK_COUNT)
     pass.end()
     this.device.queue.submit([encoder.finish()])
 
@@ -367,17 +399,17 @@ export class GPUSimulation {
       )
 
       if (this.settings.SELECTED_PROPERTY === 'density') {
-        this.gpuMin.compute('min', this.bufDensities, this.bufRanges, 0)
-        this.gpuMin.compute('max', this.bufDensities, this.bufRanges, 1)
+        this.gpuMin.compute('min', this.bufDensities, 0, this.settings.N, this.bufRanges, 0)
+        this.gpuMin.compute('max', this.bufDensities, 0, this.settings.N, this.bufRanges, 1)
       } else if (this.settings.SELECTED_PROPERTY === 'near_density') {
-        this.gpuMin.compute('min', this.bufNearDensities, this.bufRanges, 2)
-        this.gpuMin.compute('max', this.bufNearDensities, this.bufRanges, 3)
+        this.gpuMin.compute('min', this.bufNearDensities, 0, this.settings.N, this.bufRanges, 2)
+        this.gpuMin.compute('max', this.bufNearDensities, 0, this.settings.N, this.bufRanges, 3)
       } else if (this.settings.SELECTED_PROPERTY === 'force') {
-        this.gpuMin.compute('min', this.bufForcesMag, this.bufRanges, 4)
-        this.gpuMin.compute('max', this.bufForcesMag, this.bufRanges, 5)
+        this.gpuMin.compute('min', this.bufForcesMag, 0, this.settings.N, this.bufRanges, 4)
+        this.gpuMin.compute('max', this.bufForcesMag, 0, this.settings.N, this.bufRanges, 5)
       } else if (this.settings.SELECTED_PROPERTY === 'velocity') {
-        this.gpuMin.compute('min', this.bufVelocitiesMag, this.bufRanges, 6)
-        this.gpuMin.compute('max', this.bufVelocitiesMag, this.bufRanges, 7)
+        this.gpuMin.compute('min', this.bufVelocitiesMag, 0, this.settings.N, this.bufRanges, 6)
+        this.gpuMin.compute('max', this.bufVelocitiesMag, 0, this.settings.N, this.bufRanges, 7)
       }
     }
 

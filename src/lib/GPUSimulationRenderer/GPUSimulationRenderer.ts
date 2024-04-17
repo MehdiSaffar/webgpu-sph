@@ -9,30 +9,36 @@ export type GPUSimulationRendererSettings = {
   MAX_COLOR: [number, number, number]
   BACKGROUND_COLOR: [number, number, number]
   RADIUS: number
+  INTERACTION_RADIUS: number
 }
 
 export class GPUSimulationRenderer {
   device: GPUDevice
   simulation: GPUSimulation
-  renderPipeline: GPURenderPipeline
-  renderBindGroup: GPUBindGroup
+  renderParticlesPipeline: GPURenderPipeline
+  renderParticlesBindGroup: GPUBindGroup
 
   canvas: HTMLCanvasElement
 
   ctx: GPUCanvasContext
 
-  RenderUBOValues = new ArrayBuffer(64)
+  RenderUBOValues = new ArrayBuffer(80)
   RenderUBOViews = {
     SCENE_SIZE: new Float32Array(this.RenderUBOValues, 0, 2),
     VIEWPORT_SIZE: new Float32Array(this.RenderUBOValues, 8, 2),
     SELECTED_PROPERTY: new Uint32Array(this.RenderUBOValues, 16, 1),
     MIN_COLOR: new Float32Array(this.RenderUBOValues, 32, 3),
     MAX_COLOR: new Float32Array(this.RenderUBOValues, 48, 3),
-    RADIUS: new Float32Array(this.RenderUBOValues, 60, 1)
+    INTERACTION_RADIUS: new Float32Array(this.RenderUBOValues, 60, 1),
+    INTERACTION_AMOUNT: new Float32Array(this.RenderUBOValues, 64, 1),
+    RADIUS: new Float32Array(this.RenderUBOValues, 68, 1)
   }
 
   settings: GPUSimulationRendererSettings
   bufRenderUBO: GPUBuffer
+  renderInteractionPipeline: GPURenderPipeline
+  bufInteraction: GPUBuffer
+  renderInteractionBindGroup: GPUBindGroup
 
   constructor(args: {
     device: GPUDevice
@@ -55,7 +61,7 @@ export class GPUSimulationRenderer {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    this.renderPipeline = this.device.createRenderPipeline({
+    this.renderParticlesPipeline = this.device.createRenderPipeline({
       label: 'Render Pipeline',
       layout: 'auto',
       vertex: {
@@ -87,8 +93,40 @@ export class GPUSimulationRenderer {
       }
     })
 
-    this.renderBindGroup = this.device.createBindGroup({
-      layout: this.renderPipeline.getBindGroupLayout(0),
+    this.renderInteractionPipeline = this.device.createRenderPipeline({
+      label: 'Render Interaction Pipeline',
+      layout: 'auto',
+      vertex: {
+        module: renderShaderModule,
+        entryPoint: 'vs_interaction',
+        buffers: [
+          {
+            stepMode: 'instance',
+            arrayStride: 2 * 4,
+            attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }]
+          }
+        ]
+      },
+      fragment: {
+        module: renderShaderModule,
+        entryPoint: 'fs_interaction',
+        targets: [
+          {
+            format: presentationFormat,
+            blend: {
+              color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+              alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }
+            }
+          }
+        ]
+      },
+      primitive: {
+        topology: 'triangle-list'
+      }
+    })
+
+    this.renderParticlesBindGroup = this.device.createBindGroup({
+      layout: this.renderParticlesPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.bufRenderUBO } },
         { binding: 1, resource: { buffer: this.simulation.bufRanges } },
@@ -97,6 +135,17 @@ export class GPUSimulationRenderer {
         { binding: 4, resource: { buffer: this.simulation.bufForcesMag } },
         { binding: 5, resource: { buffer: this.simulation.bufVelocitiesMag } }
       ]
+    })
+
+    this.renderInteractionBindGroup = this.device.createBindGroup({
+      layout: this.renderInteractionPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.bufRenderUBO } }]
+    })
+
+    this.bufInteraction = this.device.createBuffer({
+      label: 'Interaction Buffer',
+      size: 2 * Float32Array.BYTES_PER_ELEMENT,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST
     })
 
     this.settings = args.settings
@@ -126,10 +175,12 @@ export class GPUSimulationRenderer {
     this.RenderUBOViews.MIN_COLOR.set(this.settings.MIN_COLOR)
     this.RenderUBOViews.MAX_COLOR.set(this.settings.MAX_COLOR)
     this.RenderUBOViews.RADIUS.set([this.settings.RADIUS])
+    this.RenderUBOViews.INTERACTION_RADIUS.set([this.settings.INTERACTION_RADIUS])
+    this.RenderUBOViews.INTERACTION_AMOUNT.set([this.simulation.settings.INTERACTION_AMOUNT])
     this.device.queue.writeBuffer(this.bufRenderUBO, 0, this.RenderUBOValues)
   }
 
-  render() {
+  render(interactionType: 'add-fluid' | 'force') {
     const renderPassDescriptor: GPURenderPassDescriptor = {
       label: 'renderPassDescriptor',
       colorAttachments: [
@@ -142,12 +193,21 @@ export class GPUSimulationRenderer {
       ]
     }
 
+    this.writeUniforms()
+    this.device.queue.writeBuffer(this.bufInteraction, 0, this.simulation.UBOViews.INTERACTION_POS)
     let encoder = this.device.createCommandEncoder({ label: 'pass encoder' })
     const pass = encoder.beginRenderPass(renderPassDescriptor)
-    pass.setPipeline(this.renderPipeline)
+    pass.setPipeline(this.renderParticlesPipeline)
     pass.setVertexBuffer(0, this.simulation.bufPositions)
-    pass.setBindGroup(0, this.renderBindGroup)
+    pass.setBindGroup(0, this.renderParticlesBindGroup)
     pass.draw(6, this.simulation.settings.N)
+
+    if (this.simulation.settings.INTERACTION_AMOUNT !== 0.0) {
+      pass.setPipeline(this.renderInteractionPipeline)
+      pass.setVertexBuffer(0, this.bufInteraction)
+      pass.setBindGroup(0, this.renderInteractionBindGroup)
+      pass.draw(6, 1)
+    }
     pass.end()
 
     this.device.queue.submit([encoder.finish()])

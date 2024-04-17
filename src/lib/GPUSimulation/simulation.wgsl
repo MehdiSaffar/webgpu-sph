@@ -1,3 +1,5 @@
+const WK_SIZE: u32 = $[WK_SIZE];
+
 struct UBO {
     N: u32,
     SMOOTHING_RADIUS: f32,
@@ -15,6 +17,7 @@ struct UBO {
 
     INTERACTION_STRENGTH: f32,
     INTERACTION_POS: vec2f,
+    INTERACTION_RADIUS: f32,
 
     DENSITY_KERNEL: u32,
 };
@@ -130,17 +133,19 @@ fn near_density_to_near_pressure(near_density: f32) -> f32 {
     return ubo.NEAR_DENSITY_TO_NEAR_PRESSURE_FACTOR * near_density;
 }
 
-fn compute_densities_dumb(i: u32) -> f32 {
+fn compute_densities_dumb(i: u32) -> vec2f {
     var density = 0.0;
+    var near_density = 0.0;
 
     for (var j = 0u; j < ubo.N; j++) {
         let dist = distance(predicted_positions[i], predicted_positions[j]);
         if dist <= ubo.SMOOTHING_RADIUS {
             density += density_kernel(dist);
+            near_density += near_density_kernel(dist);
         }
     }
 
-    return density;
+    return vec2f(density, near_density);
 }
 
 fn compute_densities_smart(i: u32) -> vec2f {
@@ -211,7 +216,7 @@ fn compute_interaction_force(i: u32) -> vec2f {
     }
 
     let dist = distance(predicted_positions[i], ubo.INTERACTION_POS);
-    if dist > 10 {
+    if dist > ubo.INTERACTION_RADIUS {
         return vec2f(0.0);
     }
 
@@ -251,13 +256,16 @@ fn compute_forces_smart(i: u32) -> vec2f {
 
 // ------- COMPUTE KERNELS ------- 
 
-const SIZE = 256;
-
-@compute @workgroup_size(SIZE)
+@compute @workgroup_size(WK_SIZE)
 fn spatial_lookup_pass_one(
     @builtin(global_invocation_id) gid: vec3u
 ) {
     let i = gid.x;
+    if i >= ubo.N {
+        spatial_lookup[i] = vec2u(4294967294, 4294967294);
+        start_indices[i] = ubo.N;
+        return;
+    }
 
     let cell_coords = get_cell_coords(predicted_positions[i]);
     let cell_key = get_cell_key(get_cell_hash(cell_coords));
@@ -266,7 +274,7 @@ fn spatial_lookup_pass_one(
     start_indices[i] = ubo.N;
 }
 
-@compute @workgroup_size(SIZE)
+@compute @workgroup_size(WK_SIZE)
 fn spatial_lookup_pass_two(
     @builtin(global_invocation_id) gid: vec3u
 ) {
@@ -278,24 +286,32 @@ fn spatial_lookup_pass_two(
     }
 }
 
-@compute @workgroup_size(SIZE)
+@compute @workgroup_size(WK_SIZE)
 fn compute_densities(@builtin(global_invocation_id) gid: vec3u) {
     let i = gid.x;
 
-    let ds = compute_densities_smart(i);
-    // let densities = compute_densities_dumb(i)
+    if i >= ubo.N {
+        return;
+    }
+
+    // let ds = compute_densities_smart(i);
+    let ds = compute_densities_dumb(i);
 
     densities[i] = ds.x;
     near_densities[i] = ds.y;
 }
 
-@compute @workgroup_size(SIZE)
+@compute @workgroup_size(WK_SIZE)
 fn compute_forces(@builtin(global_invocation_id) gid: vec3u) {
     let i = gid.x;
 
-    var forces = compute_forces_smart(i);
+    if i >= ubo.N {
+        return;
+    }
+
+    // var forces = compute_forces_smart(i);
+    var forces = compute_forces_dumb(i);
     forces += compute_interaction_force(i);
-    // forces[i] = compute_forces_dumb(i);
     forces_mag[i] = length(forces);
 
     velocities[i] += (forces / densities[i]) * ubo.TIME_STEP;
@@ -307,9 +323,13 @@ fn compute_forces(@builtin(global_invocation_id) gid: vec3u) {
     resolve_collisions(i);
 }
 
-@compute @workgroup_size(SIZE)
+@compute @workgroup_size(WK_SIZE)
 fn predict_positions(@builtin(global_invocation_id) gid: vec3u) {
     let i = gid.x;
+
+    if i >= ubo.N {
+        return;
+    }
 
     predicted_positions[i] = positions[i] + velocities[i] * ubo.TIME_STEP;
 }

@@ -2,36 +2,40 @@
   import { onMount } from 'svelte'
   import { GPUSimulation } from '../lib/GPUSimulation/GPUSimulation'
   import { GPUSimulationRenderer } from '$lib/GPUSimulationRenderer/GPUSimulationRenderer'
-  import { AccordionItem, Accordion, Radio } from 'flowbite-svelte'
-  import { Label, Input, Select, Range, Button } from 'flowbite-svelte'
+  import { AccordionItem, Accordion, Radio, ButtonGroup, Label, Input, Select, Range, Button } from 'flowbite-svelte'
   import Plotly from '@aknakos/sveltekit-plotly'
-  import { LinkedinSolid, GithubSolid, PlaySolid, PauseSolid} from 'flowbite-svelte-icons'
+  import { LinkedinSolid, GithubSolid, PlaySolid, PauseSolid } from 'flowbite-svelte-icons'
 
   import { writable } from 'svelte/store'
-  import { hexToRGB, range, roundTo } from '$lib/utils'
+  import { hexToRGB, range, roundTo, sleep } from '$lib/utils'
+  import { getBuffer } from '$lib/webgpu-utils'
 
   let canvas: HTMLCanvasElement
 
+  let interactionType = 'add-fluid'
+
   const defaultSettings = {
-    N: 4096,
-    DENSITY_TO_PRESSURE_FACTOR: 2000,
+    MAX_N: 8192 * 2,
     DENSITY_KERNEL: 'spiky' as 'spiky' | 'soft',
     SELECTED_PROPERTY: 'velocity' as 'velocity' | 'density' | 'force',
-    NEAR_DENSITY_TO_NEAR_PRESSURE_FACTOR: 2000,
+    DENSITY_TO_PRESSURE_FACTOR: 2000,
+    NEAR_DENSITY_TO_NEAR_PRESSURE_FACTOR: 1500,
     PARTICLE_MASS: 1,
-    BASE_DENSITY: 2,
+    BASE_DENSITY: 2.5,
     SMOOTHING_RADIUS: 5,
     DAMPING_COEFF: 0.95,
     TIME_STEP: 1 / 60,
-    DYNAMIC_VISCOSITY: 0.8,
+    DYNAMIC_VISCOSITY: 0.5,
     GRAVITY: -9.81,
-    RADIUS: 1,
-    INTERACTION_STRENGTH: 30,
+    RADIUS: 0.8,
+    INTERACTION_STRENGTH: 75,
+    INTERACTION_RADIUS: 25,
     SCENE_SIZE: [200, 200] as [number, number],
     VIEWPORT_SIZE: [1000, 1000] as [number, number],
-    MIN_COLOR: '#c799c3',
-    MAX_COLOR: '#d41111',
-    BACKGROUND_COLOR: '#ffffff'
+    MIN_COLOR: '#FFE2DB',
+    MAX_COLOR: '#FF3300',
+    BACKGROUND_COLOR: '#ffffff',
+    INTERACTION_ADD_FLUID_ADD_COUNT: 10
   }
 
   const settings = writable({ ...defaultSettings })
@@ -49,6 +53,7 @@
   }
 
   async function init() {
+    running = false
     if (!navigator.gpu) {
       alert('WebGPU is not supported in your browser. Please use a browser that supports WebGPU.')
       throw new Error('WebGPU is not supported in your browser.')
@@ -73,7 +78,7 @@
     gpuSimulation = new GPUSimulation({
       device,
       settings: $settings,
-      initialValues: { positions: generateRandomPositions($settings.N) }
+      initialValues: { positions: generateRandomPositions($settings.MAX_N / 2) }
     })
 
     gpuSimulationRenderer = new GPUSimulationRenderer({
@@ -86,19 +91,32 @@
         SELECTED_PROPERTY: $settings.SELECTED_PROPERTY,
         MIN_COLOR: hexToRGB($settings.MIN_COLOR),
         MAX_COLOR: hexToRGB($settings.MAX_COLOR),
+        INTERACTION_RADIUS: $settings.INTERACTION_RADIUS,
         BACKGROUND_COLOR: hexToRGB($settings.BACKGROUND_COLOR),
         RADIUS: $settings.RADIUS
       }
     })
+    running = true
   }
 
-  function loop() {
-    requestAnimationFrame(loop)
+  window.printall = async () => {
+    const ranges = await getBuffer(gpuSimulation.bufRanges, gpuSimulation.device, Float32Array)
+    // const pos = (await getBuffer(gpuSimulation.bufPositions, gpuSimulation.device, Float32Array)).slice(0, $settings.N)
+    // const den = (await getBuffer(gpuSimulation.bufDensities, gpuSimulation.device, Float32Array)).slice(0, $settings.N * 2)
+    // console.log('density', den)
+    // console.log('positions', pos)
+    console.log(ranges)
+  }
 
+  async function loop() {
+    // await gpuSimulation.device.queue.onSubmittedWorkDone()
     if (running) {
       gpuSimulation.simulate()
       gpuSimulationRenderer.render()
     }
+
+    // await sleep(100)
+    requestAnimationFrame(loop)
   }
 
   onMount(async () => {
@@ -106,31 +124,51 @@
     loop()
   })
 
-  function onCanvasMouseMove(event: MouseEvent) {
-    const type = event.buttons === 2 ? 'pull' : event.buttons === 1 ? 'push' : 'none'
-    if (type != 'none') {
-      const x = (event.offsetX / canvas.offsetWidth) * $settings.SCENE_SIZE[0]
-      const y = (event.offsetY / canvas.offsetHeight) * $settings.SCENE_SIZE[1]
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.code === 'KeyA') {
+      interactionType = 'add-fluid'
+    } else if (event.code === 'KeyF') {
+      interactionType = 'force'
+    } else if (event.code === 'Space') {
+      running = !running
+    }
+  }
 
-      // const [x, y] = mousePosToScenePos(event.clientX, event.clientY)
-      gpuSimulation.setInteraction(x, y, type)
+  function onCanvasMouseMove(event: MouseEvent) {
+    const x = (event.offsetX / canvas.offsetWidth) * $settings.SCENE_SIZE[0]
+    const y = (event.offsetY / canvas.offsetHeight) * $settings.SCENE_SIZE[1]
+
+    if (interactionType === 'force') {
+      const type = event.buttons === 2 ? 'pull' : event.buttons === 1 ? 'push' : 'none'
+      if (type !== 'none') {
+        gpuSimulation.interactForce(x, y, type)
+      }
+    } else if (interactionType === 'add-fluid') {
+      if (event.buttons === 1) {
+        gpuSimulation.interactAddFluid(x, y, $settings.INTERACTION_ADD_FLUID_ADD_COUNT)
+      }
     }
   }
 
   function onCanvasMouseUp(event: MouseEvent) {
-    gpuSimulation.setInteraction(0, 0, 'none')
+    if (interactionType === 'force') {
+      gpuSimulation.interactForce(0, 0, 'none')
+    } else {
+      onCanvasMouseMove(event)
+    }
   }
 
   let running = true
 
-  $: ({ N } = $settings)
-  $: N, init()
+  $: ({ MAX_N } = $settings)
+  $: MAX_N, init()
   $: gpuSimulation?.updateSettings($settings)
   $: gpuSimulationRenderer?.updateSettings({
     SELECTED_PROPERTY: $settings.SELECTED_PROPERTY,
     MIN_COLOR: hexToRGB($settings.MIN_COLOR),
     MAX_COLOR: hexToRGB($settings.MAX_COLOR),
     BACKGROUND_COLOR: hexToRGB($settings.BACKGROUND_COLOR),
+    INTERACTION_RADIUS: $settings.INTERACTION_RADIUS,
     RADIUS: $settings.RADIUS
   })
 
@@ -169,11 +207,11 @@
   $: kernelData = $settings.DENSITY_KERNEL === 'spiky' ? getSpikyKernelData() : getSoftKernelData()
   $: nearKernelData = $settings.DENSITY_KERNEL === 'spiky' ? getSpikyNearKernelData() : getSoftNearKernelData()
 
-  const elements = [
+  const simulationParameters = [
     {
-      label: 'Particle Count',
-      name: 'N',
-      values: [128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576],
+      label: 'Maximum Particle Count',
+      name: 'MAX_N',
+      values: [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576],
       description:
         'The number of particles in the simulation. It has to be a power of 2 because the algorithms used in the current implementation require it.'
     },
@@ -242,6 +280,26 @@
       description: 'The radius of the particles.'
     }
   ]
+  const interactionParameters = [
+    {
+      label: 'Force - Interaction Strength',
+      name: 'INTERACTION_STRENGTH',
+      range: [100, 10_000, 100],
+      description: 'The intensity of the pushing-pulling force.'
+    },
+    {
+      label: 'Force - Interaction Radius',
+      name: 'INTERACTION_RADIUS',
+      range: [1, 100, 1],
+      description: 'The radius of the pushing-pulling force.'
+    },
+    {
+      label: 'Add Fluid - Particle Count',
+      name: 'INTERACTION_ADD_FLUID_ADD_COUNT',
+      range: [1, 20, 1],
+      description: 'Number of particles to add on every frame.'
+    }
+  ]
 </script>
 
 <main class="flex h-screen">
@@ -267,10 +325,10 @@
         <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API" target="_blank">WebGPU API</a>.
       </p>
       <p>
-        To get started, choose the number of desired particles under <span class="font-bold">Simulation Parameters</span
+        To get started, choose the maximum number of desired particles under <span class="font-bold"
+          >Simulation Parameters</span
         > and play around with the other settings to change the behavior of the fluid. You can also interact with the fluid
-        by clicking and dragging on the canvas. Right-click to push the fluid away and left-click to pull the fluid towards
-        the cursor.
+        by clicking and dragging on the canvas.
       </p>
       <p>
         For more information, check out the project's code on <a
@@ -283,17 +341,42 @@
         >.
       </p>
       <p>Have fun!</p>
-      <Button on:click={() => running = !running}>
-        
+      <hr />
+      <Button on:click={() => (running = !running)}>
         {#if running}
-        Pause simulation <PauseSolid/>
+          Pause simulation (Spacebar) <PauseSolid />
         {:else}
-        Play simulation <PlaySolid/>
+          Play simulation (Spacebar) <PlaySolid />
         {/if}
-      
       </Button>
+      <div class="flex">
+        <Label for="hs-color-input" class="flex-shrink-0 self-center me-2">Interaction mode:</Label>
+        <ButtonGroup class="w-full">
+          <Button
+            class="w-full"
+            outline={interactionType !== 'force'}
+            on:click={() => (interactionType = 'force')}
+            color="primary">Force (F)</Button
+          >
+          <Button
+            class="w-full"
+            outline={interactionType !== 'add-fluid'}
+            on:click={() => (interactionType = 'add-fluid')}
+            color="primary">Add fluid (A)</Button
+          >
+        </ButtonGroup>
+      </div>
+
+      <p>
+        <span class="font-semibold">Force mode:</span> Left-click to pull the fluid towards the cursor. Right-click to push
+        the fluid away.
+      </p>
+      <p>
+        <span class="font-semibold">Add fluid mode:</span> Left-click to add fluid to the scene. You can set the number of
+        particles to be added on every frame. You can only add up to the set Max Particle Count.
+      </p>
     </div>
-    <AccordionItem open>
+    <AccordionItem>
       <span slot="header">Visualization parameters</span>
       <div class="flex mb-2">
         <Label for="hs-color-input" class="flex-shrink-0 self-center me-2">Color based on:</Label>
@@ -339,7 +422,7 @@
         </div>
       </div>
     </AccordionItem>
-    <AccordionItem open>
+    <AccordionItem>
       <span slot="header">Simulation parameters</span>
       <div class="flex">
         <Plotly
@@ -383,7 +466,7 @@
       </div>
       <section class="m-2 p-2">
         <div class="parameters gap-x-2">
-          {#each elements as { name, label, range, values, description }}
+          {#each simulationParameters as { name, label, range, values, description }}
             <Label for={name} class="self-center font-semibold">{label}: {roundTo($settings[name], 4)}</Label>
             {#if range}
               <Range
@@ -407,13 +490,48 @@
               disabled={$settings[name] === defaultSettings[name]}
               on:click={() => ($settings[name] = defaultSettings[name])}>Reset</Button
             >
-            <p class="col-span-3 mb-12  ">{description}</p>
+            <p class="col-span-3 mb-12">{description}</p>
+          {/each}
+        </div>
+      </section>
+    </AccordionItem>
+    <AccordionItem>
+      <span slot="header">Interaction parameters</span>
+      <section class="m-2 p-2">
+        <div class="parameters gap-x-2">
+          {#each interactionParameters as { name, label, range, values, description }}
+            <Label for={name} class="self-center font-semibold">{label}: {roundTo($settings[name], 4)}</Label>
+            {#if range}
+              <Range
+                class="self-center"
+                {name}
+                min={range[0]}
+                max={range[1]}
+                step={range[2]}
+                bind:value={$settings[name]}
+              />
+            {:else if values}
+              <Select
+                class="self-center"
+                {name}
+                items={values.map((value) => ({ value, name: value.toString() }))}
+                bind:value={$settings[name]}
+              />
+            {/if}
+            <Button
+              class="ml-8"
+              disabled={$settings[name] === defaultSettings[name]}
+              on:click={() => ($settings[name] = defaultSettings[name])}>Reset</Button
+            >
+            <p class="col-span-3 mb-12">{description}</p>
           {/each}
         </div>
       </section>
     </AccordionItem>
   </Accordion>
 </main>
+
+<svelte:window on:keydown={onKeyDown} />
 
 <style>
   a {

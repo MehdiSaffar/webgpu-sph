@@ -1,10 +1,11 @@
+import { getBuffer } from '$lib/webgpu-utils'
 import templateShaderCode from './sort.wgsl?raw'
 import { varEx } from 'varex'
 
 export class GPUSort {
   ubo: Uint32Array
   bufUBO: GPUBuffer
-  MAX_WK_SIZE: number
+  WK_SIZE: number
   pipelineSortAll: GPUComputePipeline
   pipelineSortChunk: GPUComputePipeline
   bindGroupLayout: GPUBindGroupLayout
@@ -18,9 +19,9 @@ export class GPUSort {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     })
 
-    this.MAX_WK_SIZE = this.device.limits.maxComputeWorkgroupSizeX
+    this.WK_SIZE = this.device.limits.maxComputeWorkgroupSizeX
 
-    const shaderCode = varEx(templateShaderCode, { WK_SIZE: this.MAX_WK_SIZE })
+    const shaderCode = varEx(templateShaderCode, { WK_SIZE: this.WK_SIZE })
     const shaderModule = this.device.createShaderModule({ label: 'GPUSort Shader Module', code: shaderCode })
 
     this.bindGroupLayout = this.device.createBindGroupLayout({
@@ -61,27 +62,25 @@ export class GPUSort {
     const bufferByteLength = this.buffer.size
     const bufferUnitLength = bufferByteLength / bytesPerUnit
 
-    const WK_COUNT = Math.max(1, bufferUnitLength / this.MAX_WK_SIZE)
-    const OFFSET = Math.log2(bufferUnitLength) - Math.log2(this.MAX_WK_SIZE * 2)
+    const WK_COUNT = Math.max(1, bufferUnitLength / this.WK_SIZE)
+    const OFFSET = Math.log2(bufferUnitLength) - Math.log2(this.WK_SIZE * 2)
     
 
-    let encoder = this.device.createCommandEncoder({ label: 'GPUSort Command Encoder' })
-    let pass = encoder.beginComputePass({ label: 'GPUSort Compute Pass' })
+    let encoder = this.device.createCommandEncoder({ label: 'GPUSort Command Encoder (All)' })
+    let pass = encoder.beginComputePass({ label: 'GPUSort Compute Pass (All)' })
     pass.setPipeline(this.pipelineSortAll)
     pass.setBindGroup(0, this.bindGroup)
     pass.dispatchWorkgroups(WK_COUNT)
     pass.end()
     this.device.queue.submit([encoder.finish()])
-    let i = 1
 
     if (WK_COUNT > 1) {
       for (let k = WK_COUNT >> OFFSET; k <= bufferUnitLength; k = k << 1) {
         for (let j = k >> 1; j > 0; j = j >> 1) {
-          i += 1
-          encoder = this.device.createCommandEncoder({ label: 'GPUSort Command Encoder' })
+          encoder = this.device.createCommandEncoder({ label: `GPUSort Command Encoder ${[k, j]}` })
           this.device.queue.writeBuffer(this.bufUBO, 0, new Uint32Array([k, j]))
 
-          const pass = encoder.beginComputePass({ label: 'GPUSort Compute Pass' })
+          const pass = encoder.beginComputePass({ label: `GPUSort Compute Pass ${[k, j]}` })
           pass.setPipeline(this.pipelineSortChunk)
           pass.setBindGroup(0, this.bindGroup)
           pass.dispatchWorkgroups(WK_COUNT)
@@ -91,6 +90,5 @@ export class GPUSort {
         }
       }
     }
-    // console.log(i)
   }
 }

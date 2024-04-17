@@ -9,6 +9,8 @@ struct RenderUBO {
     SELECTED_PROPERTY: u32,
     MIN_COLOR: vec3f,
     MAX_COLOR: vec3f,
+    INTERACTION_RADIUS: f32,
+    INTERACTION_AMOUNT: f32,
     RADIUS: f32,
 };
 
@@ -89,3 +91,41 @@ fn fs(ov: OutVertex) -> @location(0) vec4f {
 
     return mix(vec4f(ubo.MIN_COLOR, alpha), vec4f(ubo.MAX_COLOR, alpha), ov.value);
 }
+
+@vertex 
+fn vs_interaction(iv: InVertex, @builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> OutVertex {
+    var ov: OutVertex;
+
+    let scale = ubo.VIEWPORT_SIZE.x / ubo.SCENE_SIZE.x;
+
+    var pos = (iv.pos + quad_points[vi] * ubo.INTERACTION_RADIUS) * scale;
+    pos = pos / ubo.VIEWPORT_SIZE * 2 - 1;
+    pos.y = -pos.y;
+    ov.pos = vec4f(pos, 0, 1);
+
+    var center_pos = iv.pos * scale;
+    center_pos = center_pos / ubo.VIEWPORT_SIZE * 2 - 1;
+    center_pos.y = -center_pos.y;
+    ov.center_pos = vec4f(center_pos, 0, 1);
+
+    ov.uv = quad_points[vi] * 0.5 + 0.5;
+    ov.center_uv = vec2f(0.5, 0.5);
+    return ov;
+}
+ 
+@fragment
+fn fs_interaction(ov: OutVertex) -> @location(0) vec4f {
+    let dist = distance(ov.uv, ov.center_uv);
+    if dist < 0.49 || dist > 0.5 {
+        discard;
+    }
+
+    if ubo.INTERACTION_AMOUNT > 0.0 {
+        return vec4f(1.0, 0.0, 0.0, 1.0);
+    } else if (ubo.INTERACTION_AMOUNT == 0.0) {
+        return vec4f(0.2, 0.2, 1.2, 1.0);
+    } else {
+        return vec4f(0.0, 1.0, 0.0, 1.0);
+    }
+}
+
