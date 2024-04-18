@@ -1,6 +1,6 @@
 # Fluid simulator app with WebGPU API
 
-[![](./demo.mp4)](https://webgpu-sph.vercel.app)
+https://github.com/MehdiSaffar/webgpu-sph/assets/13124263/36eec33e-fd3b-4893-9745-8b9c49b8c35e
 
 This project is a fluid simulator application written in WebGPU, utilizing the [Smoothed Particle Hydrodynamics (SPH)](https://en.wikipedia.org/wiki/Smoothed-particle_hydrodynamics) technique for simulation. 
 
